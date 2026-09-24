@@ -1,0 +1,12 @@
+# Render Blueprint: deploys the Statcast Explorer as a free web service.
+# Render dashboard → New → Blueprint → pick this repo and branch.
+services:
+  - type: web
+    name: statcast-explorer
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # One worker keeps the in-memory cache shared; threads handle parallel requests.
+    # A long timeout because a full season means ~150 MLB requests.
+    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 180
+    healthCheckPath: /api/glossary
