@@ -51,6 +51,7 @@
           <h3 id="sc-name"></h3>
           <p id="sc-meta"></p>
           <p id="sc-sample" class="muted"></p>
+          <p id="sc-savant-note" class="muted small" hidden>Baseball Savant data (run value, expected stats, official barrels) couldn’t be loaded, so those show as —.</p>
         </div>
       </section>
 
@@ -108,6 +109,7 @@
                 <th scope="col">Pitch</th><th scope="col">#</th><th scope="col">Usage</th>
                 <th scope="col">Velo</th><th scope="col">Spin</th><th scope="col">IVB</th><th scope="col">HB</th>
                 <th scope="col">Whiff %</th><th scope="col">BBE</th><th scope="col">Avg EV</th><th scope="col">Hard-hit %</th>
+                <th scope="col" title="Run value (positive = good for this player)">RV</th><th scope="col" title="Run value per 100 pitches">RV/100</th><th scope="col">xwOBA</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -127,8 +129,9 @@
     <section class="sc-panel">
       <h3>Glossary</h3>
       <dl id="sc-glossary" class="sc-glossary"></dl>
-      <p class="muted small">Data: MLB Stats API (statsapi.mlb.com). Barrel % uses Statcast’s published exit-velocity /
-        launch-angle windows; Baseball Savant’s official numbers may differ slightly.</p>
+      <p class="muted small">Data: MLB Stats API (statsapi.mlb.com) and Baseball Savant (run value, expected stats,
+        official barrels). If Savant is unavailable, Barrel % falls back to Statcast’s published exit-velocity /
+        launch-angle windows.</p>
     </section>
   </main>
 

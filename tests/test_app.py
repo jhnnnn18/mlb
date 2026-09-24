@@ -1,7 +1,7 @@
 import pytest
 
 import app as server
-from statcast import mlb_api
+from statcast import mlb_api, savant
 from tests.test_mlb_api import PBP
 
 
@@ -20,7 +20,14 @@ def client(monkeypatch):
                 for d in range(1, 31)]}]}
         return PBP
 
+    def fake_savant_rows(player_id, role, start, end):
+        # The home run in the newest game (30), at-bat 5, pitch 2, with Savant-only numbers.
+        return [{"game_pk": "30", "at_bat_number": "5", "pitch_number": "2", "delta_run_exp": "1.4",
+                 "estimated_ba_using_speedangle": "0.81", "estimated_woba_using_speedangle": "1.6",
+                 "woba_value": "2.0", "woba_denom": "1", "launch_speed_angle": "6", "events": "home_run"}]
+
     monkeypatch.setattr(mlb_api, "get_json", fake_get_json)
+    monkeypatch.setattr(savant, "fetch_rows", fake_savant_rows)
     return server.app.test_client()
 
 
@@ -37,6 +44,10 @@ def test_statcast(client):
     homer = data["pitches"][1]
     assert homer["is_barrel"] and homer["is_hit"] and homer["play_id"] == "p2"
     assert data["pitch_types"][0]["code"] == "SL"
+    assert data["savant_available"] is True
+    assert data["summary"]["run_value"] == pytest.approx(1.4)
+    game30_homer = next(p for p in data["pitches"] if p["game_pk"] == 30 and p["pitch_number"] == 2)
+    assert game30_homer["xba"] == 0.81 and game30_homer["launch_speed_angle"] == 6
 
 
 def test_statcast_rejects_bad_params(client):

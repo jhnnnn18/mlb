@@ -45,6 +45,9 @@
   // --- formatting --------------------------------------------------------
   function fmt(v, digits) { return v === null || v === undefined ? '—' : v.toFixed(digits === undefined ? 1 : digits); }
   function pct(v) { return v === null || v === undefined ? '—' : (v * 100).toFixed(1) + '%'; }
+  // Rate stats like xBA/xwOBA are shown baseball-style: .312
+  function rate3(v) { return v === null || v === undefined ? '—' : v.toFixed(3).replace(/^0/, ''); }
+  function signed(v, digits) { return v === null || v === undefined ? '—' : (v > 0 ? '+' : '') + v.toFixed(digits === undefined ? 1 : digits); }
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -127,6 +130,7 @@
       state.summary = data.summary;
       state.pitchTypes = data.pitch_types;
       state.barrelZone = data.barrel_zone;
+      state.savant = data.savant_available;
       assignPitchColors();
       setStatus('');
       render();
@@ -171,6 +175,7 @@
       '<span>' + esc(shortDate(p.date)) + ' vs ' + esc(opponentName(p)) + '</span>' +
       '<span>EV ' + fmt(p.ev) + ' mph · LA ' + fmt(p.la, 0) + '°' + (p.dist ? ' · ' + fmt(p.dist, 0) + ' ft' : '') + '</span>' +
       '<span>' + esc(p.pitch_name) + (p.speed ? ' ' + fmt(p.speed) + ' mph' : '') + '</span>' +
+      (p.xba !== null ? '<span>xBA ' + rate3(p.xba) + '</span>' : '') +
       (p.is_barrel ? '<span class="tag">Barrel</span>' : '') + videoHint(p);
   }
   function describePitch(p) {
@@ -202,6 +207,7 @@
     var range = games.length ? shortDate(games[games.length - 1].date) + ' – ' + shortDate(games[0].date) : '';
     $('sc-sample').textContent = games.length + ' games (' + range + ') · ' + s.pa + ' plate appearances · ' +
       s.pitches + ' pitches · ' + s.bbe + ' batted balls';
+    $('sc-savant-note').hidden = state.savant;
   }
 
   function tile(label, value, help) {
@@ -222,7 +228,10 @@
         tile('Avg EV allowed', fmt(s.avg_ev) + '<small> mph</small>', 'Average exit velocity of batted balls allowed'),
         tile('Hard-hit % allowed', pct(s.hard_hit), 'Batted balls allowed at 95+ mph'),
         tile('Barrel % allowed', pct(s.barrel), 'Batted balls allowed in the barrel zone'),
-        tile('Zone %', pct(s.zone), 'Pitches thrown in the strike zone')
+        tile('Zone %', pct(s.zone), 'Pitches thrown in the strike zone'),
+        tile('Run value', signed(s.run_value), 'Runs saved by this pitcher’s pitches (positive = good for the pitcher)'),
+        tile('xwOBA allowed', rate3(s.xwoba), 'Expected wOBA allowed, based on quality of contact (actual wOBA ' + rate3(s.woba) + ')'),
+        tile('xBA allowed', rate3(s.xba), 'Expected batting average allowed, based on quality of contact')
       ];
     } else {
       tiles = [
@@ -235,7 +244,10 @@
         tile('Whiff %', pct(s.whiff), 'Swings and misses ÷ swings'),
         tile('Chase %', pct(s.chase), 'Swings at pitches outside the zone'),
         tile('K %', pct(s.k_rate), 'Strikeouts ÷ plate appearances'),
-        tile('BB %', pct(s.bb_rate), 'Walks ÷ plate appearances')
+        tile('BB %', pct(s.bb_rate), 'Walks ÷ plate appearances'),
+        tile('Run value', signed(s.run_value), 'Runs this batter added (positive = good for the batter)'),
+        tile('xwOBA', rate3(s.xwoba), 'Expected wOBA, based on quality of contact (actual wOBA ' + rate3(s.woba) + ')'),
+        tile('xBA', rate3(s.xba), 'Expected batting average, based on quality of contact')
       ];
     }
     $('sc-tiles').innerHTML = tiles.join('');
@@ -285,7 +297,8 @@
       return '<tr><td><span class="swatch" style="background:' + state.pitchColor[r.code] + '"></span>' + esc(r.name) + '</td>' +
         '<td>' + r.count + '</td><td>' + pct(r.usage) + '</td><td>' + fmt(r.velo) + '</td>' +
         '<td>' + fmt(r.spin, 0) + '</td><td>' + fmt(r.ivb) + '</td><td>' + fmt(r.hb) + '</td>' +
-        '<td>' + pct(r.whiff) + '</td><td>' + r.bbe + '</td><td>' + fmt(r.ev) + '</td><td>' + pct(r.hard_hit) + '</td></tr>';
+        '<td>' + pct(r.whiff) + '</td><td>' + r.bbe + '</td><td>' + fmt(r.ev) + '</td><td>' + pct(r.hard_hit) + '</td>' +
+        '<td>' + signed(r.run_value) + '</td><td>' + signed(r.rv_per_100) + '</td><td>' + rate3(r.xwoba) + '</td></tr>';
     }).join('');
   }
 
@@ -297,6 +310,7 @@
     { key: 'ev', label: 'EV' },
     { key: 'la', label: 'LA' },
     { key: 'dist', label: 'Dist' },
+    { key: 'xba', label: 'xBA' },
     { key: 'event', label: 'Result' },
     { key: null, label: 'Video' }
   ];
@@ -323,7 +337,7 @@
     table.querySelector('tbody').innerHTML = shown.map(function (p) {
       return '<tr' + (p.barrel ? ' class="barrel"' : '') + '><td>' + esc(shortDate(p.date)) + '</td><td>' + esc(p.opp) +
         '</td><td>' + esc(p.pitch_name) + '</td><td>' + fmt(p.speed) + '</td><td>' + fmt(p.ev) + '</td><td>' + fmt(p.la, 0) +
-        '</td><td>' + fmt(p.dist, 0) + '</td><td>' + esc(p.event) + (p.barrel ? ' <span class="tag">Barrel</span>' : '') + '</td><td>' +
+        '</td><td>' + fmt(p.dist, 0) + '</td><td>' + rate3(p.xba) + '</td><td>' + esc(p.event) + (p.barrel ? ' <span class="tag">Barrel</span>' : '') + '</td><td>' +
         (videoUrl(p) ? '<a href="' + esc(videoUrl(p)) + '" target="_blank" rel="noopener" aria-label="Watch video">▶ Watch</a>' : '—') + '</td></tr>';
     }).join('');
     var more = $('sc-balls-more');

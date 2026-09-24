@@ -16,6 +16,11 @@ HIT_EVENTS = {"single", "double", "triple", "home_run"}
 STRIKEOUT_EVENTS = {"strikeout", "strikeout_double_play"}
 WALK_EVENTS = {"walk", "intent_walk"}
 
+# Savant PA results that don't count as at-bats (for xBA).
+NON_AT_BAT_EVENTS = {"walk", "intent_walk", "hit_by_pitch", "sac_fly", "sac_bunt",
+                     "sac_fly_double_play", "sac_bunt_double_play", "catcher_interf", "truncated_pa"}
+OFFICIAL_BARREL = 6  # Savant launch_speed_angle class for a barrel
+
 HARD_HIT_MPH = 95
 SWEET_SPOT_DEGREES = (8, 32)
 
@@ -59,6 +64,9 @@ def barrel_window(ev: float) -> tuple[float, float] | None:
 
 
 def is_barrel(p: Pitch) -> bool:
+    """Savant's official barrel flag when we have it, else the EV/LA window above."""
+    if p.launch_speed_angle is not None:
+        return p.launch_speed_angle == OFFICIAL_BARREL
     if not is_batted_ball(p):
         return False
     window = barrel_window(p.ev)
@@ -91,7 +99,55 @@ def _rate(pitches: list[Pitch], test: Callable[[Pitch], bool]) -> float | None:
     return sum(1 for p in pitches if test(p)) / len(pitches)
 
 
-def summarize(pitches: list[Pitch]) -> dict:
+def has_savant_data(pitches: list[Pitch]) -> bool:
+    return any(p.run_value is not None or p.savant_event for p in pitches)
+
+
+def run_value(pitches: list[Pitch], role: str) -> float | None:
+    """Total run value, signed so positive is good for the player being viewed.
+
+    Savant's delta_run_exp is from the batting team's side, so a pitcher's
+    run value is its negative (the same convention Savant's leaderboards use).
+    """
+    values = [p.run_value for p in pitches if p.run_value is not None]
+    if not values:
+        return None
+    total = sum(values)
+    return -total if role == "pitcher" else total
+
+
+def run_value_per_100(pitches: list[Pitch], role: str) -> float | None:
+    total = run_value(pitches, role)
+    return None if total is None else total / len(pitches) * 100
+
+
+def xwoba(pitches: list[Pitch]) -> float | None:
+    """Expected wOBA: batted balls use their xwOBA, other PA results their actual wOBA credit."""
+    pa = [p for p in pitches if p.woba_denom]
+    if not pa:
+        return None
+    credit = sum(p.xwoba if p.xwoba is not None else (p.woba_value or 0) for p in pa)
+    return credit / sum(p.woba_denom for p in pa)
+
+
+def woba(pitches: list[Pitch]) -> float | None:
+    pa = [p for p in pitches if p.woba_denom]
+    if not pa:
+        return None
+    return sum(p.woba_value or 0 for p in pa) / sum(p.woba_denom for p in pa)
+
+
+def xba(pitches: list[Pitch]) -> float | None:
+    """Expected batting average: expected hits (xBA of each batted ball) per at-bat."""
+    at_bats = [p for p in pitches if p.savant_event and p.savant_event not in NON_AT_BAT_EVENTS]
+    if not at_bats:
+        return None
+    expected_hits = sum(p.xba if p.xba is not None else float(p.savant_event in HIT_EVENTS)
+                        for p in at_bats)
+    return expected_hits / len(at_bats)
+
+
+def summarize(pitches: list[Pitch], role: str = "batter") -> dict:
     """Headline numbers for the stat tiles."""
     batted = [p for p in pitches if is_batted_ball(p)]
     swings = [p for p in pitches if is_swing(p)]
@@ -115,10 +171,15 @@ def summarize(pitches: list[Pitch]) -> dict:
         "bb_rate": _rate(pa_ends, lambda p: p.event_type in WALK_EVENTS),
         "avg_velo": _avg(pitches, "speed"),
         "max_velo": _max(pitches, "speed"),
+        # Savant-only (None when Savant data is unavailable)
+        "run_value": run_value(pitches, role),
+        "xba": xba(pitches),
+        "xwoba": xwoba(pitches),
+        "woba": woba(pitches),
     }
 
 
-def by_pitch_type(pitches: list[Pitch]) -> list[dict]:
+def by_pitch_type(pitches: list[Pitch], role: str = "batter") -> list[dict]:
     """One row per pitch type, most-used first."""
     groups: dict[str, list[Pitch]] = defaultdict(list)
     for p in pitches:
@@ -139,6 +200,9 @@ def by_pitch_type(pitches: list[Pitch]) -> list[dict]:
             "bbe": len(batted),
             "ev": _avg(batted, "ev"),
             "hard_hit": _rate(batted, is_hard_hit),
+            "run_value": run_value(group, role),
+            "rv_per_100": run_value_per_100(group, role),
+            "xwoba": xwoba(group),
         })
     return sorted(rows, key=lambda r: r["count"], reverse=True)
 
@@ -163,8 +227,11 @@ GLOSSARY = [
     ("Exit Velocity (EV)", "How fast the ball comes off the bat, in mph. Harder-hit balls become hits far more often."),
     ("Launch Angle (LA)", "The vertical angle the ball leaves the bat. Below 10° is a ground ball, 10–25° a line drive, 25–50° a fly ball, above 50° a pop-up."),
     ("Hard-Hit %", "Share of batted balls hit 95 mph or harder — the speed where outcomes start to improve sharply."),
-    ("Barrel %", "Share of batted balls with the ideal EV + LA combination (starting at 98 mph and 26–30°). Barrels historically hit at least .500 with a 1.500 slugging percentage."),
+    ("Barrel %", "Share of batted balls with the ideal EV + LA combination (starting at 98 mph and 26–30°). Barrels historically hit at least .500 with a 1.500 slugging percentage. Uses Savant's official barrel flag when available."),
     ("Sweet Spot %", "Share of batted balls launched between 8° and 32° — the band that produces the most line drives."),
+    ("Run Value", "How many runs a pitch (or group of pitches) was worth, based on how each one changed the count, outs and base runners. Shown so that positive is good for the player you're viewing. RV/100 is run value per 100 pitches, for comparing pitches thrown different amounts."),
+    ("wOBA", "Weighted on-base average: like on-base percentage, but each result is weighted by how many runs it's worth (a home run counts more than a single). League average is usually around .310–.320."),
+    ("xBA / xwOBA", "Expected batting average and expected wOBA. They judge each batted ball by its exit velocity and launch angle (and sometimes the batter's speed) rather than whether it found a hole, so they strip out luck and defense."),
     ("Whiff %", "Swings and misses divided by total swings."),
     ("Chase %", "How often the batter swings at pitches outside the strike zone."),
     ("Zone %", "Share of pitches thrown inside the strike zone."),

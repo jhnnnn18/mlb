@@ -21,7 +21,7 @@ def pitch_event(code, desc, in_play=False, hit=None, play_id="pid"):
 
 PBP = {"allPlays": [
     {   # our batter: two pitches, then a home run
-        "about": {"inning": 3},
+        "about": {"inning": 3, "atBatIndex": 4},
         "matchup": {"batter": {"id": 10, "fullName": "Our Guy"}, "pitcher": {"id": 20, "fullName": "Their Ace"},
                     "batSide": {"code": "R"}, "pitchHand": {"code": "L"}},
         "result": {"event": "Home Run", "eventType": "home_run"},
@@ -52,6 +52,8 @@ def test_extract_pitches_for_batter():
     assert last.hc_x == 100.5 and last.hc_y == 40.2
     assert first.pitch_type == "SL" and first.spin == 2500 and first.ivb == 2.0
     assert first.pitcher == "Their Ace" and first.inning == 3 and first.game_pk == 777
+    assert (first.at_bat_number, first.pitch_number) == (5, 1)   # 1-based, like Savant
+    assert last.pitch_number == 2                                 # non-pitch events not counted
 
 
 def test_extract_pitches_for_pitcher():

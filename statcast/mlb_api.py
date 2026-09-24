@@ -83,6 +83,8 @@ class Pitch:
     date: str
     opponent: str
     play_id: str | None  # Statcast's id for the pitch; also keys its video
+    at_bat_number: int | None  # 1-based within the game; with pitch_number, matches Savant rows
+    pitch_number: int | None  # 1-based within the plate appearance
     inning: int | None
     batter: str
     pitcher: str
@@ -114,6 +116,19 @@ class Pitch:
     # The plate appearance's result, set only on its final pitch.
     event: str
     event_type: str
+    # Baseball Savant-only fields, filled in by savant.merge() when available.
+    run_value: float | None = None  # change in run expectancy, batting team's view
+    xba: float | None = None  # expected batting average (batted balls)
+    xwoba: float | None = None  # expected wOBA (batted balls)
+    xslg: float | None = None
+    woba_value: float | None = None  # wOBA credit for the PA result
+    woba_denom: float | None = None  # 1 if the PA counts toward wOBA
+    launch_speed_angle: int | None = None  # contact quality 1-6; 6 = official barrel
+    effective_speed: float | None = None  # perceived velocity, mph
+    arm_angle: float | None = None  # degrees
+    bat_speed: float | None = None  # mph
+    swing_length: float | None = None  # feet
+    savant_event: str = ""  # Savant's PA result code (e.g. "sac_fly"); set on the final pitch
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -144,11 +159,14 @@ def extract_pitches(pbp: dict, game: dict, player_id: int, role: str) -> list[Pi
             hit_coords = hit.get("coordinates") or {}
             count = e.get("count") or {}
             last = i == len(pitches) - 1
+            at_bat_index = (play.get("about") or {}).get("atBatIndex")
             out.append(Pitch(
                 game_pk=game["game_pk"],
                 date=game["date"],
                 opponent=game["opponent"],
                 play_id=e.get("playId"),
+                at_bat_number=at_bat_index + 1 if isinstance(at_bat_index, int) else None,
+                pitch_number=e.get("pitchNumber", i + 1),
                 inning=(play.get("about") or {}).get("inning"),
                 batter=(matchup.get("batter") or {}).get("fullName", ""),
                 pitcher=(matchup.get("pitcher") or {}).get("fullName", ""),

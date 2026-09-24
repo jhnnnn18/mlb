@@ -15,7 +15,7 @@ import os
 import requests
 from flask import Flask, jsonify, request
 
-from statcast import metrics, mlb_api
+from statcast import metrics, mlb_api, savant
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -48,11 +48,14 @@ def statcast(player_id: int):
     if games_limit != "all":
         games = games[:int(games_limit)]
     pitches = mlb_api.fetch_pitches(games, player_id, role)
+    # Adds run value, expected stats and official barrels; the page still works without it.
+    savant_ok = savant.add_savant_data(pitches, games, player_id, role)
 
     return jsonify(
         games=games,
-        summary=metrics.summarize(pitches),
-        pitch_types=metrics.by_pitch_type(pitches),
+        savant_available=savant_ok,
+        summary=metrics.summarize(pitches, role),
+        pitch_types=metrics.by_pitch_type(pitches, role),
         pitches=[{**p.to_dict(), **metrics.pitch_flags(p)} for p in pitches],
         barrel_zone=metrics.barrel_zone_outline(),
     )
