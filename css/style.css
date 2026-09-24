@@ -156,7 +156,7 @@ svg .plate { fill: var(--sc-grid); stroke: var(--sc-axis); }
 .sc-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 .sc-table th, .sc-table td { padding: 0.35rem 0.5rem; text-align: right; border-bottom: 1px solid var(--sc-grid); white-space: nowrap; }
 .sc-table th:first-child, .sc-table td:first-child { text-align: left; }
-#sc-balls th:nth-child(-n+3), #sc-balls td:nth-child(-n+3), #sc-balls th:last-child, #sc-balls td:last-child { text-align: left; }
+#sc-balls th:nth-child(-n+3), #sc-balls td:nth-child(-n+3), #sc-balls th:nth-child(n+8), #sc-balls td:nth-child(n+8) { text-align: left; }
 .sc-table th { color: var(--sc-ink-2); font-weight: bold; }
 .sc-table th button { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; color: inherit; }
 .sc-table tr.barrel td { background: #fdf1eb; }
@@ -195,4 +195,7 @@ svg .plate { fill: var(--sc-grid); stroke: var(--sc-axis); }
 }
 .sc-tooltip strong, .sc-tooltip span { display: block; }
 .sc-tooltip .tag { display: inline-block; margin-top: 0.2rem; }
+.sc-tooltip .hint { color: var(--sc-muted); font-size: 0.75rem; margin-top: 0.2rem; }
+#sc-balls a { color: var(--sc-accent); text-decoration: none; white-space: nowrap; }
+#sc-balls a:hover { text-decoration: underline; }
 .sc-tooltip [hidden], .sc-tooltip[hidden] { display: none; }

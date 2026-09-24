@@ -9,6 +9,7 @@ built to make the numbers easier to understand.
 - Spray chart and exit velocity vs. launch angle chart (with barrel zone)
 - Strike-zone pitch locations (filter by swings/whiffs/called strikes/in play) and pitch movement (pitchers)
 - Pitch-type breakdown table and sortable batted-ball log
+- Video: click any chart dot, or ▶ Watch in the batted-ball log, to open that pitch's clip on Baseball Savant
 - Glossary explaining every stat
 - Shareable URLs, e.g. `index.html#player=592450&role=batter&season=2026&games=25`
 

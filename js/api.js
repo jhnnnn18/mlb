@@ -88,6 +88,7 @@ window.Statcast = window.Statcast || {};
           date: game.date,
           opponent: game.opponent,
           inning: play.about ? play.about.inning : null,
+          playId: e.playId || null, // Statcast pitch id; also keys the pitch's video
           paId: game.gamePk + '-' + (play.about ? play.about.atBatIndex : ''),
           batter: m.batter ? m.batter.fullName : '',
           pitcher: m.pitcher ? m.pitcher.fullName : '',

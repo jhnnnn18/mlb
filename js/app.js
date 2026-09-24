@@ -144,6 +144,19 @@
     return M.isHit(p) ? OUTCOMES[1] : OUTCOMES[0];
   }
 
+  // --- video ------------------------------------------------------------
+  // Statcast files each pitch's broadcast clip under the pitch's playId.
+  function videoUrl(p) {
+    return p.playId ? 'https://baseballsavant.mlb.com/sporty-videos?playId=' + encodeURIComponent(p.playId) : null;
+  }
+  function openVideo(p) {
+    var url = videoUrl(p);
+    if (url) window.open(url, '_blank', 'noopener');
+  }
+  function videoHint(p) {
+    return videoUrl(p) ? '<span class="hint">Click to watch video ▶</span>' : '';
+  }
+
   // --- tooltips ----------------------------------------------------------
   function opponentName(p) { return state.role === 'pitcher' ? p.batter : p.pitcher; }
 
@@ -152,13 +165,14 @@
       '<span>' + esc(shortDate(p.date)) + ' vs ' + esc(opponentName(p)) + '</span>' +
       '<span>EV ' + fmt(p.ev) + ' mph · LA ' + fmt(p.la, 0) + '°' + (p.dist ? ' · ' + fmt(p.dist, 0) + ' ft' : '') + '</span>' +
       '<span>' + esc(p.pitchName) + (p.speed ? ' ' + fmt(p.speed) + ' mph' : '') + '</span>' +
-      (M.isBarrel(p) ? '<span class="tag">Barrel</span>' : '');
+      (M.isBarrel(p) ? '<span class="tag">Barrel</span>' : '') + videoHint(p);
   }
   function describePitch(p) {
     return '<strong>' + esc(p.pitchName) + (p.speed ? ' · ' + fmt(p.speed) + ' mph' : '') + '</strong>' +
       '<span>' + esc(p.callDesc) + (p.event ? ' → ' + esc(p.event) : '') + '</span>' +
       '<span>' + esc(shortDate(p.date)) + ' vs ' + esc(opponentName(p)) + ' · count ' + p.balls + '-' + p.strikes + '</span>' +
-      (p.spin ? '<span>Spin ' + fmt(p.spin, 0) + ' rpm · IVB ' + fmt(p.ivb) + '" · HB ' + fmt(p.hb) + '"</span>' : '');
+      (p.spin ? '<span>Spin ' + fmt(p.spin, 0) + ' rpm · IVB ' + fmt(p.ivb) + '" · HB ' + fmt(p.hb) + '"</span>' : '') +
+      videoHint(p);
   }
 
   // --- rendering ---------------------------------------------------------
@@ -235,8 +249,8 @@
     var colorOf = function (p) { return outcomeOf(p).color; };
     $('sc-bb-legend').innerHTML = outcomeLegend();
     $('sc-bb-title').textContent = state.role === 'pitcher' ? 'Batted balls allowed' : 'Batted balls';
-    C.spray($('sc-spray'), balls, colorOf, describeBall);
-    C.evLa($('sc-evla'), balls, colorOf, describeBall);
+    C.spray($('sc-spray'), balls, colorOf, describeBall, openVideo);
+    C.evLa($('sc-evla'), balls, colorOf, describeBall, openVideo);
   }
 
   function pitchLegend() {
@@ -253,10 +267,10 @@
     var visible = state.pitches.filter(function (p) { return !state.hiddenTypes[p.pitchType]; });
     var colorOf = function (p) { return state.pitchColor[p.pitchType] || OTHER_COLOR; };
     $('sc-pitch-legend').innerHTML = pitchLegend();
-    C.zone($('sc-zone'), visible.filter(filter.test), colorOf, describePitch);
+    C.zone($('sc-zone'), visible.filter(filter.test), colorOf, describePitch, openVideo);
     var moveWrap = $('sc-movement-wrap');
     moveWrap.hidden = state.role !== 'pitcher';
-    if (state.role === 'pitcher') C.movement($('sc-movement'), visible, colorOf, describePitch);
+    if (state.role === 'pitcher') C.movement($('sc-movement'), visible, colorOf, describePitch, openVideo);
   }
 
   function renderArsenal() {
@@ -278,7 +292,8 @@
     { key: 'ev', label: 'EV' },
     { key: 'la', label: 'LA' },
     { key: 'dist', label: 'Dist' },
-    { key: 'event', label: 'Result' }
+    { key: 'event', label: 'Result' },
+    { key: null, label: 'Video' }
   ];
 
   function renderBallTable() {
@@ -295,6 +310,7 @@
     var shown = state.showAllBalls ? balls : balls.slice(0, 25);
     var table = $('sc-balls');
     table.querySelector('thead').innerHTML = '<tr>' + BALL_COLUMNS.map(function (c) {
+      if (!c.key) return '<th scope="col">' + c.label + '</th>';
       var sorted = c.key === k;
       return '<th scope="col" aria-sort="' + (sorted ? (dir > 0 ? 'ascending' : 'descending') : 'none') + '">' +
         '<button type="button" data-sort="' + c.key + '">' + c.label + (sorted ? (dir > 0 ? ' ▲' : ' ▼') : '') + '</button></th>';
@@ -302,7 +318,8 @@
     table.querySelector('tbody').innerHTML = shown.map(function (p) {
       return '<tr' + (p.barrel ? ' class="barrel"' : '') + '><td>' + esc(shortDate(p.date)) + '</td><td>' + esc(p.opp) +
         '</td><td>' + esc(p.pitchName) + '</td><td>' + fmt(p.speed) + '</td><td>' + fmt(p.ev) + '</td><td>' + fmt(p.la, 0) +
-        '</td><td>' + fmt(p.dist, 0) + '</td><td>' + esc(p.event) + (p.barrel ? ' <span class="tag">Barrel</span>' : '') + '</td></tr>';
+        '</td><td>' + fmt(p.dist, 0) + '</td><td>' + esc(p.event) + (p.barrel ? ' <span class="tag">Barrel</span>' : '') + '</td><td>' +
+        (videoUrl(p) ? '<a href="' + esc(videoUrl(p)) + '" target="_blank" rel="noopener" aria-label="Watch video">▶ Watch</a>' : '—') + '</td></tr>';
     }).join('');
     var more = $('sc-balls-more');
     more.hidden = balls.length <= 25;

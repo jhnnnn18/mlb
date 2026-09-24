@@ -24,8 +24,8 @@ window.Statcast = window.Statcast || {};
     return el('svg', { viewBox: '0 0 ' + w + ' ' + h, role: 'img', 'aria-label': label }, container);
   }
 
-  // Shared tooltip: attach once per chart container.
-  function bindTooltip(container, records, describe) {
+  // Shared tooltip (and optional click handler): attach once per chart container.
+  function bindTooltip(container, records, describe, onPick) {
     var tip = document.getElementById('sc-tooltip');
     container.onpointermove = function (e) {
       var i = e.target.getAttribute && e.target.getAttribute('data-i');
@@ -40,6 +40,10 @@ window.Statcast = window.Statcast || {};
       tip.style.top = y + 'px';
     };
     container.onpointerleave = function () { tip.hidden = true; };
+    container.onclick = function (e) {
+      var i = e.target.getAttribute && e.target.getAttribute('data-i');
+      if (i !== null && i !== undefined && onPick) onPick(records[+i]);
+    };
   }
 
   // Smaller dots once a chart gets crowded (e.g. a full season of pitches).
@@ -61,7 +65,7 @@ window.Statcast = window.Statcast || {};
     return { x: HOME.x + Math.sin(a) * feet * FT, y: HOME.y - Math.cos(a) * feet * FT };
   }
 
-  function sprayChart(container, balls, colorOf, describe) {
+  function sprayChart(container, balls, colorOf, describe, onPick) {
     sizeFor(balls.length);
     var svg = svgRoot(container, 250, 215, 'Spray chart of batted balls');
     var g = el('g', { transform: 'translate(0,8)' }, svg);
@@ -83,11 +87,11 @@ window.Statcast = window.Statcast || {};
       if (p.hcX === null || p.hcY === null) return;
       dot(g, p.hcX, p.hcY, colorOf(p), i);
     });
-    bindTooltip(container, balls, describe);
+    bindTooltip(container, balls, describe, onPick);
   }
 
   // --- Exit velocity vs launch angle --------------------------------------
-  function evLaChart(container, balls, colorOf, describe) {
+  function evLaChart(container, balls, colorOf, describe, onPick) {
     sizeFor(balls.length);
     var W = 360, H = 260, m = { l: 44, r: 12, t: 12, b: 36 };
     var svg = svgRoot(container, W, H, 'Exit velocity versus launch angle');
@@ -119,11 +123,11 @@ window.Statcast = window.Statcast || {};
       if (p.la < -60 || p.la > 80 || p.ev < 40) return;
       dot(svg, x(p.la), y(Math.min(p.ev, 120)), colorOf(p), i);
     });
-    bindTooltip(container, balls, describe);
+    bindTooltip(container, balls, describe, onPick);
   }
 
   // --- Strike zone (catcher's view) ---------------------------------------
-  function zoneChart(container, pitches, colorOf, describe) {
+  function zoneChart(container, pitches, colorOf, describe, onPick) {
     sizeFor(pitches.length);
     var W = 300, H = 320, m = { l: 30, r: 10, t: 10, b: 30 };
     var svg = svgRoot(container, W, H, 'Pitch locations from the catcher’s view');
@@ -154,11 +158,11 @@ window.Statcast = window.Statcast || {};
       if (Math.abs(p.px) > 2.5 || p.pz < -0.25 || p.pz > 5.25) return;
       dot(svg, x(p.px), y(p.pz), colorOf(p), i);
     });
-    bindTooltip(container, pitches, describe);
+    bindTooltip(container, pitches, describe, onPick);
   }
 
   // --- Pitch movement ----------------------------------------------------
-  function movementChart(container, pitches, colorOf, describe) {
+  function movementChart(container, pitches, colorOf, describe, onPick) {
     sizeFor(pitches.length);
     var W = 320, H = 320, m = { l: 40, r: 12, t: 12, b: 36 };
     var svg = svgRoot(container, W, H, 'Pitch movement: horizontal versus induced vertical break');
@@ -178,7 +182,7 @@ window.Statcast = window.Statcast || {};
       if (Math.abs(p.hb) > 25 || Math.abs(p.ivb) > 25) return;
       dot(svg, x(p.hb), y(p.ivb), colorOf(p), i);
     });
-    bindTooltip(container, pitches, describe);
+    bindTooltip(container, pitches, describe, onPick);
   }
 
   S.charts = {
