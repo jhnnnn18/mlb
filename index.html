@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Statcast Explorer</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>Statcast Explorer</h1>
+    <p>MLB pitch-tracking data, one player at a time</p>
+  </header>
+
+  <main>
+    <p class="sc-intro">Pitch-by-pitch tracking data for any MLB player, pulled live from the MLB Stats API.
+      Hover any dot for details, and see the glossary at the bottom for what each stat means.</p>
+
+    <form id="sc-form" class="sc-controls">
+      <label class="grow">Player
+        <input id="sc-search" list="sc-player-list" placeholder="Start typing a name…" autocomplete="off">
+        <datalist id="sc-player-list"></datalist>
+      </label>
+      <div class="sc-role" role="group" aria-label="View as">
+        <span class="label">View as</span>
+        <div>
+          <button type="button" data-role="batter" aria-pressed="true">Batter</button><button type="button" data-role="pitcher" aria-pressed="false">Pitcher</button>
+        </div>
+      </div>
+      <label>Season
+        <select id="sc-season"></select>
+      </label>
+      <label>Games
+        <select id="sc-games">
+          <option value="10">Last 10</option>
+          <option value="25" selected>Last 25</option>
+          <option value="50">Last 50</option>
+          <option value="all">Full season</option>
+        </select>
+      </label>
+      <button type="submit" class="primary">Load</button>
+    </form>
+    <div class="sc-examples">Try: <span id="sc-examples"></span></div>
+
+    <p id="sc-status" class="sc-status" role="status" aria-live="polite"></p>
+
+    <div id="sc-results" hidden>
+      <section class="sc-player">
+        <img id="sc-headshot" width="80" height="80" alt="">
+        <div>
+          <h3 id="sc-name"></h3>
+          <p id="sc-meta"></p>
+          <p id="sc-sample" class="muted"></p>
+        </div>
+      </section>
+
+      <section id="sc-tiles" class="sc-tiles" aria-label="Summary stats"></section>
+
+      <section class="sc-panel">
+        <div class="sc-panel-head">
+          <h3 id="sc-bb-title">Batted balls</h3>
+          <div id="sc-bb-legend" class="legend"></div>
+        </div>
+        <div class="sc-grid">
+          <figure>
+            <figcaption>Spray chart</figcaption>
+            <div id="sc-spray" class="chart"></div>
+          </figure>
+          <figure>
+            <figcaption>Exit velocity vs. launch angle</figcaption>
+            <div id="sc-evla" class="chart"></div>
+          </figure>
+        </div>
+      </section>
+
+      <section class="sc-panel">
+        <div class="sc-panel-head">
+          <h3>Pitches</h3>
+          <label class="inline">Show
+            <select id="sc-zone-filter">
+              <option value="all">All pitches</option>
+              <option value="swings">Swings</option>
+              <option value="whiffs">Whiffs</option>
+              <option value="called">Called strikes</option>
+              <option value="inplay">Balls in play</option>
+            </select>
+          </label>
+        </div>
+        <div id="sc-pitch-legend" class="legend" aria-label="Pitch types (click to hide or show)"></div>
+        <div class="sc-grid">
+          <figure>
+            <figcaption>Pitch location</figcaption>
+            <div id="sc-zone" class="chart"></div>
+          </figure>
+          <figure id="sc-movement-wrap">
+            <figcaption>Pitch movement</figcaption>
+            <div id="sc-movement" class="chart"></div>
+          </figure>
+        </div>
+      </section>
+
+      <section class="sc-panel">
+        <h3 id="sc-arsenal-title">Pitch arsenal</h3>
+        <div class="table-wrap">
+          <table id="sc-arsenal" class="sc-table">
+            <thead>
+              <tr>
+                <th scope="col">Pitch</th><th scope="col">#</th><th scope="col">Usage</th>
+                <th scope="col">Velo</th><th scope="col">Spin</th><th scope="col">IVB</th><th scope="col">HB</th>
+                <th scope="col">Whiff %</th><th scope="col">BBE</th><th scope="col">Avg EV</th><th scope="col">Hard-hit %</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="sc-panel">
+        <h3>Batted-ball log</h3>
+        <div class="table-wrap">
+          <table id="sc-balls" class="sc-table"><thead></thead><tbody></tbody></table>
+        </div>
+        <button type="button" id="sc-balls-more" class="link-button" hidden></button>
+      </section>
+    </div>
+
+    <section class="sc-panel">
+      <h3>Glossary</h3>
+      <dl id="sc-glossary" class="sc-glossary"></dl>
+      <p class="muted small">Data: MLB Stats API (statsapi.mlb.com). Barrel % uses Statcast’s published exit-velocity /
+        launch-angle windows; Baseball Savant’s official numbers may differ slightly.</p>
+    </section>
+  </main>
+
+  <div id="sc-tooltip" class="sc-tooltip" hidden></div>
+
+  <footer>
+    <p>Data from the MLB Stats API. Not affiliated with MLB or Baseball Savant.</p>
+  </footer>
+
+  <script src="js/api.js"></script>
+  <script src="js/metrics.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
