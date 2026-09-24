@@ -84,14 +84,15 @@ window.Statcast = window.Statcast || {};
       text(g, p.x + (ft === 400 ? 0 : -2), p.y - 4, ft + ' ft', 'axis-label small', ft === 400 ? 'middle' : 'start');
     });
     balls.forEach(function (p, i) {
-      if (p.hcX === null || p.hcY === null) return;
-      dot(g, p.hcX, p.hcY, colorOf(p), i);
+      if (p.hc_x === null || p.hc_y === null) return;
+      dot(g, p.hc_x, p.hc_y, colorOf(p), i);
     });
     bindTooltip(container, balls, describe, onPick);
   }
 
   // --- Exit velocity vs launch angle --------------------------------------
-  function evLaChart(container, balls, colorOf, describe, onPick) {
+  // barrelZone: [ev, minLA, maxLA] rows from the server.
+  function evLaChart(container, balls, colorOf, describe, onPick, barrelZone) {
     sizeFor(balls.length);
     var W = 360, H = 260, m = { l: 44, r: 12, t: 12, b: 36 };
     var svg = svgRoot(container, W, H, 'Exit velocity versus launch angle');
@@ -107,11 +108,10 @@ window.Statcast = window.Statcast || {};
     });
     // Barrel zone
     var upper = [], lower = [];
-    for (var ev = 98; ev <= 120; ev += 1) {
-      var w = S.metrics.barrelWindow(ev);
-      lower.push(x(w[0]).toFixed(1) + ',' + y(ev).toFixed(1));
-      upper.unshift(x(w[1]).toFixed(1) + ',' + y(ev).toFixed(1));
-    }
+    barrelZone.forEach(function (row) {
+      lower.push(x(row[1]).toFixed(1) + ',' + y(row[0]).toFixed(1));
+      upper.unshift(x(row[2]).toFixed(1) + ',' + y(row[0]).toFixed(1));
+    });
     el('polygon', { points: lower.concat(upper).join(' '), 'class': 'barrel-zone' }, svg);
     text(svg, x(28), y(111), 'Barrel zone', 'zone-label');
     el('line', { x1: m.l, x2: W - m.r, y1: y(95), y2: y(95), 'class': 'ref-line' }, svg);
@@ -134,8 +134,8 @@ window.Statcast = window.Statcast || {};
     // Keep feet square: 5 ft wide (-2.5..2.5), 5.5 ft tall (-0.25..5.25)
     var x = scale(-2.5, 2.5, m.l, W - m.r);
     var y = scale(-0.25, 5.25, H - m.b, m.t);
-    var tops = pitches.map(function (p) { return p.szTop; }).filter(Boolean);
-    var bots = pitches.map(function (p) { return p.szBot; }).filter(Boolean);
+    var tops = pitches.map(function (p) { return p.sz_top; }).filter(Boolean);
+    var bots = pitches.map(function (p) { return p.sz_bot; }).filter(Boolean);
     var top = tops.length ? tops.reduce(function (a, b) { return a + b; }) / tops.length : 3.4;
     var bot = bots.length ? bots.reduce(function (a, b) { return a + b; }) / bots.length : 1.6;
     var half = 17 / 24; // plate is 17 inches wide

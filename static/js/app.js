@@ -1,6 +1,7 @@
-/* Page controller: reads the controls, loads data, and renders every panel. */
+/* Page controller: reads the controls, asks the Python server (app.py) for
+ * data, and renders every panel. All stat calculations happen server-side. */
 (function (S) {
-  var API = S.api, M = S.metrics, C = S.charts;
+  var C = S.charts;
 
   var PITCH_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
   var OTHER_COLOR = '#898781';
@@ -11,10 +12,10 @@
   ];
   var ZONE_FILTERS = {
     all: { label: 'All pitches', test: function () { return true; } },
-    swings: { label: 'Swings', test: M.isSwing },
-    whiffs: { label: 'Whiffs', test: M.isWhiff },
-    called: { label: 'Called strikes', test: function (p) { return p.callCode === 'C'; } },
-    inplay: { label: 'Balls in play', test: function (p) { return p.isInPlay; } }
+    swings: { label: 'Swings', test: function (p) { return p.is_swing; } },
+    whiffs: { label: 'Whiffs', test: function (p) { return p.is_whiff; } },
+    called: { label: 'Called strikes', test: function (p) { return p.call_code === 'C'; } },
+    inplay: { label: 'Balls in play', test: function (p) { return p.is_in_play; } }
   };
   var EXAMPLES = [
     { id: 592450, name: 'Aaron Judge', role: 'batter' },
@@ -24,12 +25,22 @@
   ];
 
   var state = {
-    players: [], teams: {}, pitches: [], player: null, role: 'batter',
+    players: [], pitches: [], summary: null, pitchTypes: [], barrelZone: [], player: null, role: 'batter',
     pitchColor: {}, hiddenTypes: {}, zoneFilter: 'all',
     sortKey: 'ev', sortDir: -1, showAllBalls: false, loadToken: 0
   };
 
   var $ = function (id) { return document.getElementById(id); };
+
+  // GET a JSON endpoint on our server; rejects with the server's error message.
+  function api(path) {
+    return fetch(path).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) {
+        if (!res.ok) throw new Error(body.error || 'Server error ' + res.status);
+        return body;
+      });
+    });
+  }
 
   // --- formatting --------------------------------------------------------
   function fmt(v, digits) { return v === null || v === undefined ? '—' : v.toFixed(digits === undefined ? 1 : digits); }
@@ -53,15 +64,13 @@
 
   // --- player list -------------------------------------------------------
   function playerLabel(p) {
-    var team = state.teams[p.teamId];
-    return p.name + ' (' + p.position + (team ? ', ' + team : '') + ')';
+    return p.name + ' (' + p.position + (p.team ? ', ' + p.team : '') + ')';
   }
 
   function loadPlayerList(season) {
     setStatus('Loading ' + season + ' players…');
-    return Promise.all([API.fetchPlayers(season), API.fetchTeams(season)]).then(function (res) {
-      state.players = res[0];
-      state.teams = res[1];
+    return api('/api/players?season=' + season).then(function (players) {
+      state.players = players;
       $('sc-player-list').innerHTML = state.players.map(function (p) {
         return '<option value="' + esc(playerLabel(p)) + '"></option>';
       }).join('');
@@ -106,21 +115,18 @@
     setRoleButtons(role);
     writeHash();
     $('sc-results').hidden = true;
-    setStatus('Finding ' + player.name + '’s ' + season + ' games…');
+    setStatus('Loading ' + player.name + '’s pitch data…' + (gamesWanted === 'all' ? ' (a full season can take a minute)' : ''));
 
-    API.fetchGameLog(player.id, season, role).then(function (games) {
-      if (token !== state.loadToken) return null;
-      if (!games.length) {
+    api('/api/statcast/' + player.id + '?season=' + season + '&role=' + role + '&games=' + gamesWanted).then(function (data) {
+      if (token !== state.loadToken) return;
+      if (!data.games.length) {
         throw new Error(player.name + ' has no ' + season + ' regular-season games as a ' + role + '.');
       }
-      if (gamesWanted !== 'all') games = games.slice(0, +gamesWanted);
-      state.games = games;
-      return API.fetchPitches(games, player.id, role, function (done, total) {
-        if (token === state.loadToken) setStatus('Loading pitch data… ' + done + ' / ' + total + ' games');
-      });
-    }).then(function (pitches) {
-      if (!pitches || token !== state.loadToken) return;
-      state.pitches = pitches;
+      state.games = data.games;
+      state.pitches = data.pitches;
+      state.summary = data.summary;
+      state.pitchTypes = data.pitch_types;
+      state.barrelZone = data.barrel_zone;
       assignPitchColors();
       setStatus('');
       render();
@@ -134,20 +140,20 @@
   // the first slot), so filtering never repaints a pitch.
   function assignPitchColors() {
     state.pitchColor = {};
-    M.byPitchType(state.pitches).forEach(function (row, i) {
+    state.pitchTypes.forEach(function (row, i) {
       state.pitchColor[row.code] = i < PITCH_COLORS.length ? PITCH_COLORS[i] : OTHER_COLOR;
     });
   }
 
   function outcomeOf(p) {
-    if (p.eventType === 'home_run') return OUTCOMES[2];
-    return M.isHit(p) ? OUTCOMES[1] : OUTCOMES[0];
+    if (p.event_type === 'home_run') return OUTCOMES[2];
+    return p.is_hit ? OUTCOMES[1] : OUTCOMES[0];
   }
 
   // --- video ------------------------------------------------------------
   // Statcast files each pitch's broadcast clip under the pitch's playId.
   function videoUrl(p) {
-    return p.playId ? 'https://baseballsavant.mlb.com/sporty-videos?playId=' + encodeURIComponent(p.playId) : null;
+    return p.play_id ? 'https://baseballsavant.mlb.com/sporty-videos?playId=' + encodeURIComponent(p.play_id) : null;
   }
   function openVideo(p) {
     var url = videoUrl(p);
@@ -164,12 +170,12 @@
     return '<strong>' + esc(p.event || 'In play') + '</strong>' +
       '<span>' + esc(shortDate(p.date)) + ' vs ' + esc(opponentName(p)) + '</span>' +
       '<span>EV ' + fmt(p.ev) + ' mph · LA ' + fmt(p.la, 0) + '°' + (p.dist ? ' · ' + fmt(p.dist, 0) + ' ft' : '') + '</span>' +
-      '<span>' + esc(p.pitchName) + (p.speed ? ' ' + fmt(p.speed) + ' mph' : '') + '</span>' +
-      (M.isBarrel(p) ? '<span class="tag">Barrel</span>' : '') + videoHint(p);
+      '<span>' + esc(p.pitch_name) + (p.speed ? ' ' + fmt(p.speed) + ' mph' : '') + '</span>' +
+      (p.is_barrel ? '<span class="tag">Barrel</span>' : '') + videoHint(p);
   }
   function describePitch(p) {
-    return '<strong>' + esc(p.pitchName) + (p.speed ? ' · ' + fmt(p.speed) + ' mph' : '') + '</strong>' +
-      '<span>' + esc(p.callDesc) + (p.event ? ' → ' + esc(p.event) : '') + '</span>' +
+    return '<strong>' + esc(p.pitch_name) + (p.speed ? ' · ' + fmt(p.speed) + ' mph' : '') + '</strong>' +
+      '<span>' + esc(p.call_desc) + (p.event ? ' → ' + esc(p.event) : '') + '</span>' +
       '<span>' + esc(shortDate(p.date)) + ' vs ' + esc(opponentName(p)) + ' · count ' + p.balls + '-' + p.strikes + '</span>' +
       (p.spin ? '<span>Spin ' + fmt(p.spin, 0) + ' rpm · IVB ' + fmt(p.ivb) + '" · HB ' + fmt(p.hb) + '"</span>' : '') +
       videoHint(p);
@@ -177,7 +183,7 @@
 
   // --- rendering ---------------------------------------------------------
   function render() {
-    var s = M.summarize(state.pitches);
+    var s = state.summary;
     renderHeader(s);
     renderTiles(s);
     renderBattedBallCharts();
@@ -192,8 +198,7 @@
     $('sc-headshot').hidden = false;
     $('sc-headshot').src = 'https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_120,q_auto:best/v1/people/' + p.id + '/headshot/67/current';
     $('sc-name').textContent = p.name;
-    var team = state.teams[p.teamId];
-    $('sc-meta').textContent = [p.position, team, state.role === 'pitcher' ? 'as pitcher' : 'as batter'].filter(Boolean).join(' · ');
+    $('sc-meta').textContent = [p.position, p.team, state.role === 'pitcher' ? 'as pitcher' : 'as batter'].filter(Boolean).join(' · ');
     var range = games.length ? shortDate(games[games.length - 1].date) + ' – ' + shortDate(games[0].date) : '';
     $('sc-sample').textContent = games.length + ' games (' + range + ') · ' + s.pa + ' plate appearances · ' +
       s.pitches + ' pitches · ' + s.bbe + ' batted balls';
@@ -208,35 +213,35 @@
     var tiles;
     if (state.role === 'pitcher') {
       tiles = [
-        tile('Avg velocity', fmt(s.avgVelo) + '<small> mph</small>', 'Average release speed of all pitches'),
-        tile('Max velocity', fmt(s.maxVelo) + '<small> mph</small>', 'Fastest pitch in the sample'),
+        tile('Avg velocity', fmt(s.avg_velo) + '<small> mph</small>', 'Average release speed of all pitches'),
+        tile('Max velocity', fmt(s.max_velo) + '<small> mph</small>', 'Fastest pitch in the sample'),
         tile('Whiff %', pct(s.whiff), 'Swings and misses ÷ swings'),
         tile('Chase %', pct(s.chase), 'Swings at pitches outside the zone'),
-        tile('K %', pct(s.kRate), 'Strikeouts ÷ plate appearances'),
-        tile('BB %', pct(s.bbRate), 'Walks ÷ plate appearances'),
-        tile('Avg EV allowed', fmt(s.avgEV) + '<small> mph</small>', 'Average exit velocity of batted balls allowed'),
-        tile('Hard-hit % allowed', pct(s.hardHit), 'Batted balls allowed at 95+ mph'),
+        tile('K %', pct(s.k_rate), 'Strikeouts ÷ plate appearances'),
+        tile('BB %', pct(s.bb_rate), 'Walks ÷ plate appearances'),
+        tile('Avg EV allowed', fmt(s.avg_ev) + '<small> mph</small>', 'Average exit velocity of batted balls allowed'),
+        tile('Hard-hit % allowed', pct(s.hard_hit), 'Batted balls allowed at 95+ mph'),
         tile('Barrel % allowed', pct(s.barrel), 'Batted balls allowed in the barrel zone'),
         tile('Zone %', pct(s.zone), 'Pitches thrown in the strike zone')
       ];
     } else {
       tiles = [
-        tile('Avg exit velo', fmt(s.avgEV) + '<small> mph</small>', 'Average exit velocity on batted balls'),
-        tile('Max exit velo', fmt(s.maxEV) + '<small> mph</small>', 'Hardest-hit ball in the sample'),
-        tile('Avg launch angle', fmt(s.avgLA) + '°', 'Average launch angle on batted balls'),
-        tile('Hard-hit %', pct(s.hardHit), 'Batted balls at 95+ mph'),
+        tile('Avg exit velo', fmt(s.avg_ev) + '<small> mph</small>', 'Average exit velocity on batted balls'),
+        tile('Max exit velo', fmt(s.max_ev) + '<small> mph</small>', 'Hardest-hit ball in the sample'),
+        tile('Avg launch angle', fmt(s.avg_la) + '°', 'Average launch angle on batted balls'),
+        tile('Hard-hit %', pct(s.hard_hit), 'Batted balls at 95+ mph'),
         tile('Barrel %', pct(s.barrel), 'Batted balls in the barrel zone'),
-        tile('Sweet spot %', pct(s.sweetSpot), 'Batted balls launched 8–32°'),
+        tile('Sweet spot %', pct(s.sweet_spot), 'Batted balls launched 8–32°'),
         tile('Whiff %', pct(s.whiff), 'Swings and misses ÷ swings'),
         tile('Chase %', pct(s.chase), 'Swings at pitches outside the zone'),
-        tile('K %', pct(s.kRate), 'Strikeouts ÷ plate appearances'),
-        tile('BB %', pct(s.bbRate), 'Walks ÷ plate appearances')
+        tile('K %', pct(s.k_rate), 'Strikeouts ÷ plate appearances'),
+        tile('BB %', pct(s.bb_rate), 'Walks ÷ plate appearances')
       ];
     }
     $('sc-tiles').innerHTML = tiles.join('');
   }
 
-  function battedBalls() { return state.pitches.filter(M.isBattedBall); }
+  function battedBalls() { return state.pitches.filter(function (p) { return p.is_batted_ball; }); }
 
   function outcomeLegend() {
     return OUTCOMES.map(function (o) {
@@ -250,11 +255,11 @@
     $('sc-bb-legend').innerHTML = outcomeLegend();
     $('sc-bb-title').textContent = state.role === 'pitcher' ? 'Batted balls allowed' : 'Batted balls';
     C.spray($('sc-spray'), balls, colorOf, describeBall, openVideo);
-    C.evLa($('sc-evla'), balls, colorOf, describeBall, openVideo);
+    C.evLa($('sc-evla'), balls, colorOf, describeBall, openVideo, state.barrelZone);
   }
 
   function pitchLegend() {
-    return M.byPitchType(state.pitches).map(function (row) {
+    return state.pitchTypes.map(function (row) {
       var off = state.hiddenTypes[row.code];
       return '<button type="button" class="legend-item toggle' + (off ? ' off' : '') + '" data-type="' + esc(row.code) +
         '" aria-pressed="' + !off + '"><span class="swatch" style="background:' + state.pitchColor[row.code] + '"></span>' +
@@ -264,8 +269,8 @@
 
   function renderPitchCharts() {
     var filter = ZONE_FILTERS[state.zoneFilter];
-    var visible = state.pitches.filter(function (p) { return !state.hiddenTypes[p.pitchType]; });
-    var colorOf = function (p) { return state.pitchColor[p.pitchType] || OTHER_COLOR; };
+    var visible = state.pitches.filter(function (p) { return !state.hiddenTypes[p.pitch_type]; });
+    var colorOf = function (p) { return state.pitchColor[p.pitch_type] || OTHER_COLOR; };
     $('sc-pitch-legend').innerHTML = pitchLegend();
     C.zone($('sc-zone'), visible.filter(filter.test), colorOf, describePitch, openVideo);
     var moveWrap = $('sc-movement-wrap');
@@ -274,20 +279,20 @@
   }
 
   function renderArsenal() {
-    var rows = M.byPitchType(state.pitches);
+    var rows = state.pitchTypes;
     $('sc-arsenal-title').textContent = state.role === 'pitcher' ? 'Pitch arsenal' : 'Results by pitch type faced';
     $('sc-arsenal').querySelector('tbody').innerHTML = rows.map(function (r) {
       return '<tr><td><span class="swatch" style="background:' + state.pitchColor[r.code] + '"></span>' + esc(r.name) + '</td>' +
         '<td>' + r.count + '</td><td>' + pct(r.usage) + '</td><td>' + fmt(r.velo) + '</td>' +
         '<td>' + fmt(r.spin, 0) + '</td><td>' + fmt(r.ivb) + '</td><td>' + fmt(r.hb) + '</td>' +
-        '<td>' + pct(r.whiff) + '</td><td>' + r.bbe + '</td><td>' + fmt(r.ev) + '</td><td>' + pct(r.hardHit) + '</td></tr>';
+        '<td>' + pct(r.whiff) + '</td><td>' + r.bbe + '</td><td>' + fmt(r.ev) + '</td><td>' + pct(r.hard_hit) + '</td></tr>';
     }).join('');
   }
 
   var BALL_COLUMNS = [
     { key: 'date', label: 'Date' },
     { key: 'opp', label: 'Opponent' },
-    { key: 'pitchName', label: 'Pitch' },
+    { key: 'pitch_name', label: 'Pitch' },
     { key: 'speed', label: 'Velo' },
     { key: 'ev', label: 'EV' },
     { key: 'la', label: 'LA' },
@@ -298,7 +303,7 @@
 
   function renderBallTable() {
     var balls = battedBalls().map(function (p) {
-      return Object.assign({ opp: opponentName(p), barrel: M.isBarrel(p) }, p);
+      return Object.assign({ opp: opponentName(p), barrel: p.is_barrel }, p);
     });
     var k = state.sortKey, dir = state.sortDir;
     balls.sort(function (a, b) {
@@ -317,7 +322,7 @@
     }).join('') + '</tr>';
     table.querySelector('tbody').innerHTML = shown.map(function (p) {
       return '<tr' + (p.barrel ? ' class="barrel"' : '') + '><td>' + esc(shortDate(p.date)) + '</td><td>' + esc(p.opp) +
-        '</td><td>' + esc(p.pitchName) + '</td><td>' + fmt(p.speed) + '</td><td>' + fmt(p.ev) + '</td><td>' + fmt(p.la, 0) +
+        '</td><td>' + esc(p.pitch_name) + '</td><td>' + fmt(p.speed) + '</td><td>' + fmt(p.ev) + '</td><td>' + fmt(p.la, 0) +
         '</td><td>' + fmt(p.dist, 0) + '</td><td>' + esc(p.event) + (p.barrel ? ' <span class="tag">Barrel</span>' : '') + '</td><td>' +
         (videoUrl(p) ? '<a href="' + esc(videoUrl(p)) + '" target="_blank" rel="noopener" aria-label="Watch video">▶ Watch</a>' : '—') + '</td></tr>';
     }).join('');
@@ -337,9 +342,11 @@
     var seasonSel = $('sc-season');
     for (var y = 2026; y >= 2015; y--) seasonSel.add(new Option(y, y));
 
-    $('sc-glossary').innerHTML = M.GLOSSARY.map(function (g) {
-      return '<dt>' + esc(g[0]) + '</dt><dd>' + esc(g[1]) + '</dd>';
-    }).join('');
+    api('/api/glossary').then(function (terms) {
+      $('sc-glossary').innerHTML = terms.map(function (g) {
+        return '<dt>' + esc(g.term) + '</dt><dd>' + esc(g.definition) + '</dd>';
+      }).join('');
+    }).catch(function () {});
 
     $('sc-examples').innerHTML = EXAMPLES.map(function (e) {
       return '<button type="button" class="chip" data-id="' + e.id + '" data-example-role="' + e.role + '">' + esc(e.name) + '</button>';
@@ -356,7 +363,7 @@
     // Picking from the list sets the natural role (pitchers vs. hitters).
     $('sc-search').addEventListener('change', function () {
       var p = findPlayer(this.value);
-      if (p) setRoleButtons(p.isPitcher ? 'pitcher' : 'batter');
+      if (p) setRoleButtons(p.is_pitcher ? 'pitcher' : 'batter');
     });
 
     Array.prototype.forEach.call(document.querySelectorAll('[data-role]'), function (b) {
@@ -406,9 +413,9 @@
     loadPlayerList(seasonSel.value).then(function () {
       var id = +(h.player || EXAMPLES[0].id);
       var p = state.players.find(function (x) { return x.id === id; });
-      if (p) load(p, h.role || (p.isPitcher ? 'pitcher' : 'batter'));
+      if (p) load(p, h.role || (p.is_pitcher ? 'pitcher' : 'batter'));
     }).catch(function () {
-      setStatus('Couldn’t reach the MLB Stats API. Check your connection and reload.', true);
+      setStatus('Couldn’t load players. Make sure the server is running (python app.py) and open http://localhost:8000.', true);
     });
   }
 
