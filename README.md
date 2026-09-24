@@ -25,6 +25,17 @@ Then open http://localhost:8000.
 
 Run the tests with `pytest`.
 
+**Windows:** if `pip` or `python` isn't recognised, use `py -m venv .venv`, then
+`.venv\Scripts\python.exe -m pip install -r requirements.txt` and `.venv\Scripts\python.exe app.py`.
+
+## Hosting it (open it from your phone)
+`render.yaml` sets the app up for [Render](https://render.com)'s free tier:
+1. Sign in to Render with GitHub.
+2. **New → Blueprint**, pick this repo and branch, then **Apply**.
+3. When the build finishes, open the `https://statcast-explorer-….onrender.com` URL it gives you.
+
+Free services sleep after ~15 minutes idle, so the first visit after a break takes up to a minute to wake.
+
 ## How it works
 A small Flask server does all the data work in Python; the browser only draws the page.
 
